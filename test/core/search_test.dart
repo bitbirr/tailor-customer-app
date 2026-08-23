@@ -14,7 +14,8 @@ void main() {
   });
 
   test('escapes LIKE wildcards so user input cannot broaden a query', () {
-    expect(search.escapeLike(r'100%_off\'), r'100\%\_off\\');
+    expect(search.escapeLike(r'100% off_sale'), r'100\% off\_sale');
+    expect(search.escapeLike('a\\b'), r'a\\b');
     expect(search.likeContains('Abe%', phone: false), r'%abe\%%');
     expect(search.likeContains('911_00', phone: true), r'%911\_00%');
   });
