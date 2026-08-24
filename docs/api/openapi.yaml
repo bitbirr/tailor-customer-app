@@ -1,0 +1,549 @@
+openapi: 3.1.0
+info:
+  title: Tailor Sync API
+  version: 1.0.0
+  description: >
+    Versioned contract for the future backend (not implemented in this repo).
+    Do not generate or call HTTP clients until this file is reviewed.
+    Export is local-only in MVP — there is no server export job.
+servers:
+  - url: https://api.example.invalid/v1
+    description: Placeholder. Replace after backend repo approval.
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Templates
+  - name: Customers
+  - name: Measurements
+  - name: Sync
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Exchange credentials for a bearer token
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, secret]
+              properties:
+                identifier:
+                  type: string
+                secret:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSession'
+        '401':
+          description: Invalid credentials
+  /me:
+    get:
+      tags: [Auth]
+      summary: Current user and shop
+      operationId: getMe
+      responses:
+        '200':
+          description: Current principal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+  /templates:
+    get:
+      tags: [Templates]
+      summary: Garment types and measurement fields
+      operationId: getTemplates
+      responses:
+        '200':
+          description: Seeded/approved templates
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [garmentTypes]
+                properties:
+                  garmentTypes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GarmentType'
+  /customers:
+    get:
+      tags: [Customers]
+      summary: List or search customers in the caller's shop
+      operationId: listCustomers
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Customers
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Customer'
+    post:
+      tags: [Customers]
+      summary: Create customer with a client-supplied UUID
+      operationId: createCustomer
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerWrite'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '409':
+          description: Duplicate id or idempotency conflict
+  /customers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/CustomerId'
+    get:
+      tags: [Customers]
+      operationId: getCustomer
+      responses:
+        '200':
+          description: Customer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '404':
+          description: Not found
+    patch:
+      tags: [Customers]
+      operationId: patchCustomer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerPatch'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '409':
+          description: Stale revision — pull and retry
+    delete:
+      tags: [Customers]
+      summary: Tombstone a customer
+      operationId: deleteCustomer
+      responses:
+        '204':
+          description: Tombstoned
+        '409':
+          description: Stale revision
+  /customers/{id}/measurement-sets:
+    parameters:
+      - $ref: '#/components/parameters/CustomerId'
+    get:
+      tags: [Measurements]
+      operationId: listMeasurementSets
+      responses:
+        '200':
+          description: Measurement sets
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MeasurementSet'
+    post:
+      tags: [Measurements]
+      operationId: createMeasurementSet
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeasurementSetWrite'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeasurementSet'
+  /measurement-sets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [Measurements]
+      operationId: patchMeasurementSet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeasurementSetPatch'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeasurementSet'
+        '409':
+          description: Stale revision
+    delete:
+      tags: [Measurements]
+      operationId: deleteMeasurementSet
+      responses:
+        '204':
+          description: Tombstoned
+        '409':
+          description: Stale revision
+  /sync/pull:
+    get:
+      tags: [Sync]
+      summary: Incremental deltas and tombstones
+      operationId: syncPull
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Delta batch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPullResponse'
+  /sync/push:
+    post:
+      tags: [Sync]
+      summary: Push outbox operations
+      operationId: syncPush
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncPushRequest'
+      responses:
+        '200':
+          description: Per-item results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPushResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CustomerId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+  schemas:
+    AuthSession:
+      type: object
+      required: [accessToken, tokenType]
+      properties:
+        accessToken:
+          type: string
+        tokenType:
+          type: string
+          default: Bearer
+        expiresInSec:
+          type: integer
+    Me:
+      type: object
+      required: [userId, shopId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        shopId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+    GarmentType:
+      type: object
+      required: [id, key, label, fields]
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+        label:
+          type: string
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeasurementField'
+    MeasurementField:
+      type: object
+      required: [id, key, label]
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+        label:
+          type: string
+        sortOrder:
+          type: integer
+    Customer:
+      type: object
+      required: [id, displayName, revision]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        revision:
+          type: integer
+        updatedAtMs:
+          type: integer
+        deletedAtMs:
+          type: integer
+          nullable: true
+    CustomerWrite:
+      type: object
+      required: [id, displayName]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        address:
+          type: string
+    CustomerPatch:
+      type: object
+      required: [revision]
+      properties:
+        displayName:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        revision:
+          type: integer
+          description: Client's last-seen revision. 409 if the server is newer.
+    MeasurementSet:
+      type: object
+      required: [id, customerId, garmentTypeId, takenAtMs, values, revision]
+      properties:
+        id:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        garmentTypeId:
+          type: string
+          format: uuid
+        takenAtMs:
+          type: integer
+        notes:
+          type: string
+          nullable: true
+        values:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeasurementValue'
+        revision:
+          type: integer
+        deletedAtMs:
+          type: integer
+          nullable: true
+    MeasurementValue:
+      type: object
+      required: [fieldId, valueMm]
+      properties:
+        fieldId:
+          type: string
+          format: uuid
+        valueMm:
+          type: integer
+          description: Integer millimetres.
+    MeasurementSetWrite:
+      type: object
+      required: [id, garmentTypeId, takenAtMs, values]
+      properties:
+        id:
+          type: string
+          format: uuid
+        garmentTypeId:
+          type: string
+          format: uuid
+        takenAtMs:
+          type: integer
+        notes:
+          type: string
+        values:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeasurementValue'
+    MeasurementSetPatch:
+      type: object
+      required: [revision]
+      properties:
+        takenAtMs:
+          type: integer
+        notes:
+          type: string
+          nullable: true
+        values:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeasurementValue'
+        revision:
+          type: integer
+    SyncPullResponse:
+      type: object
+      required: [cursor, customers, measurementSets, tombstones]
+      properties:
+        cursor:
+          type: string
+        customers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Customer'
+        measurementSets:
+          type: array
+          items:
+            $ref: '#/components/schemas/MeasurementSet'
+        tombstones:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tombstone'
+    Tombstone:
+      type: object
+      required: [entityType, id, deletedAtMs]
+      properties:
+        entityType:
+          type: string
+          enum: [customer, measurement_set]
+        id:
+          type: string
+          format: uuid
+        deletedAtMs:
+          type: integer
+    SyncPushRequest:
+      type: object
+      required: [operations]
+      properties:
+        operations:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncOperation'
+    SyncOperation:
+      type: object
+      required: [idempotencyKey, entityType, entityId, operation]
+      properties:
+        idempotencyKey:
+          type: string
+        entityType:
+          type: string
+          enum: [customer, measurement_set]
+        entityId:
+          type: string
+          format: uuid
+        operation:
+          type: string
+          enum: [upsert, delete]
+        payload:
+          type: object
+          additionalProperties: true
+        revision:
+          type: integer
+    SyncPushResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            required: [idempotencyKey, status]
+            properties:
+              idempotencyKey:
+                type: string
+              status:
+                type: string
+                enum: [applied, duplicate, conflict, rejected]
+              serverRevision:
+                type: integer
+              message:
+                type: string
